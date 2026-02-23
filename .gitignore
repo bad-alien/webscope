@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 .env
-webscope_report/
+webscope/reports/
 .agents/
 .claude/
 .pytest_cache/

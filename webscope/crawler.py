@@ -8,6 +8,7 @@ from playwright.async_api import Page
 
 from .models import CrawlConfig
 from .stealth import HumanBehavior
+from .utils import get_root_domain, normalize_url as utils_normalize_url
 
 
 class Crawler:
@@ -18,13 +19,14 @@ class Crawler:
     def __init__(
         self, start_url: str, config: CrawlConfig, human: HumanBehavior
     ):
-        self.start_url = start_url
+        self.start_url = utils_normalize_url(start_url)
         self.config = config
         self.human = human
 
         self.visited: Set[str] = set()
         self.queue: deque = deque()  # (url, depth, parent_url)
         self.domain = urlparse(start_url).netloc
+        self.root_domain = get_root_domain(self.domain)
 
     async def crawl(self) -> AsyncIterator[Tuple[str, int, Optional[str]]]:
         """
@@ -91,8 +93,13 @@ class Crawler:
 
                 # Filter to same domain if configured
                 if self.config.same_domain_only:
-                    if urlparse(normalized).netloc != self.domain:
-                        continue
+                    link_netloc = urlparse(normalized).netloc
+                    if self.config.include_subdomains:
+                        if get_root_domain(link_netloc) != self.root_domain:
+                            continue
+                    else:
+                        if link_netloc != self.domain:
+                            continue
 
                 # Skip if already visited
                 if normalized not in self.visited:
@@ -159,7 +166,7 @@ def normalize_url(url: str) -> str:
     query_dict = parse_qs(parsed.query, keep_blank_values=True)
     sorted_query = urlencode(sorted(query_dict.items()), doseq=True)
 
-    # Remove trailing slash from path (unless root)
-    path = parsed.path.rstrip("/") if parsed.path != "/" else "/"
+    # Normalize path: strip trailing slash, treat empty as /
+    path = parsed.path.rstrip("/") or "/"
 
     return urlunparse((scheme, netloc, path, parsed.params, sorted_query, ""))

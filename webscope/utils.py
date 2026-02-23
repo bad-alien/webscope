@@ -51,25 +51,51 @@ def normalize_url(url: str) -> str:
     query_dict = parse_qs(parsed.query, keep_blank_values=True)
     sorted_query = urlencode(sorted(query_dict.items()), doseq=True)
 
-    # Remove trailing slash from path (unless root)
-    path = parsed.path.rstrip('/') if parsed.path != '/' else '/'
+    # Normalize path: strip trailing slash, treat empty as /
+    path = parsed.path.rstrip('/') or '/'
 
     return urlunparse((scheme, netloc, path, parsed.params, sorted_query, ''))
 
 
-def is_same_domain(url: str, base_url: str) -> bool:
+def get_root_domain(netloc: str) -> str:
+    """
+    Extract the root domain from a netloc string.
+
+    Strips port and returns the last two domain segments
+    (or last three for two-letter TLDs like .co.uk).
+
+    Examples:
+        blog.example.com -> example.com
+        app.staging.example.com -> example.com
+        example.co.uk -> example.co.uk
+        example.com:8080 -> example.com
+    """
+    host = netloc.lower().split(':')[0]  # strip port
+    parts = host.split('.')
+    if len(parts) <= 2:
+        return host
+    # Handle two-letter TLDs like .co.uk, .com.au
+    if len(parts[-1]) <= 2 and len(parts[-2]) <= 3:
+        return '.'.join(parts[-3:])
+    return '.'.join(parts[-2:])
+
+
+def is_same_domain(url: str, base_url: str, include_subdomains: bool = False) -> bool:
     """
     Check if URL belongs to the same domain as base URL.
 
     Args:
         url: URL to check
         base_url: Base/reference URL
+        include_subdomains: If True, match on root domain (e.g. blog.example.com matches example.com)
 
     Returns:
         True if both URLs are on the same domain
     """
     domain1 = urlparse(url).netloc.lower()
     domain2 = urlparse(base_url).netloc.lower()
+    if include_subdomains:
+        return get_root_domain(domain1) == get_root_domain(domain2)
     return domain1 == domain2
 
 

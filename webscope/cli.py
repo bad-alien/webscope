@@ -44,8 +44,8 @@ Examples:
                         help='Maximum crawl depth (default: 3)')
     parser.add_argument('--max-pages', type=int, default=20, metavar='N',
                         help='Maximum number of pages to crawl (default: 20)')
-    parser.add_argument('--output', type=Path, default=Path('./webscope_report'),
-                        metavar='DIR', help='Output directory for report (default: ./webscope_report)')
+    parser.add_argument('--output', type=Path, default=None,
+                        metavar='DIR', help='Output directory for report (default: webscope/reports/<domain>)')
     parser.add_argument('--no-ai', action='store_true',
                         help='Skip LLM analysis')
 
@@ -55,6 +55,8 @@ Examples:
     headless_group.add_argument('--headed', dest='headless', action='store_false',
                                 help='Run browser in headed mode (show window)')
 
+    parser.add_argument('--include-subdomains', action='store_true',
+                        help='Crawl subdomains of the target domain (e.g. blog.example.com)')
     parser.add_argument('--delay', type=float, nargs=2, default=[1.0, 3.0],
                         metavar=('MIN', 'MAX'),
                         help='Delay range in seconds between actions (default: 1.0 3.0)')
@@ -199,10 +201,14 @@ async def run_crawl(config: CrawlConfig) -> Report:
                             continue
                         link_domain = urlparse(normalized).netloc
                         logger.debug(f"  Link: {normalized} | domain: '{link_domain}' vs crawler: '{crawler.domain}'")
-                        # Match with or without www. prefix
-                        crawl_domain = crawler.domain.removeprefix("www.")
-                        link_base = link_domain.removeprefix("www.")
-                        if link_base == crawl_domain:
+                        from webscope.utils import get_root_domain
+                        if config.include_subdomains:
+                            domain_match = get_root_domain(link_domain) == crawler.root_domain
+                        else:
+                            crawl_domain = crawler.domain.removeprefix("www.")
+                            link_base = link_domain.removeprefix("www.")
+                            domain_match = link_base == crawl_domain
+                        if domain_match:
                             if normalized not in crawler.visited:
                                 crawler.queue.append((normalized, depth + 1, url))
                                 if normalized not in outgoing_links:
@@ -293,16 +299,26 @@ async def main() -> int:
             raise ValueError("Minimum delay cannot be greater than maximum delay")
 
         setup_logging(verbose=args.verbose)
-        ensure_dir(args.output)
+
+        # Default output: webscope/reports/<domain>
+        if args.output is None:
+            from urllib.parse import urlparse as _urlparse
+            domain = _urlparse(url).netloc.replace(':', '_')
+            output_dir = Path(__file__).parent / 'reports' / domain
+        else:
+            output_dir = args.output
+
+        ensure_dir(output_dir)
 
         config = CrawlConfig(
             start_url=url,
-            output_dir=args.output,
+            output_dir=output_dir,
             max_depth=args.depth,
             max_pages=args.max_pages,
             headless=args.headless,
             delay_min=delay_min,
             delay_max=delay_max,
+            include_subdomains=args.include_subdomains,
             enable_ai=not args.no_ai,
             anthropic_api_key=os.getenv('ANTHROPIC_API_KEY'),
             verbose=args.verbose,

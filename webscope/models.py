@@ -36,6 +36,7 @@ class CrawlConfig:
     # Crawler settings
     respect_robots: bool = True
     same_domain_only: bool = True
+    include_subdomains: bool = False  # If True, treat subdomains as same domain
     interaction_depth: int = 2  # How many nested interactions to explore per page
 
     # Analysis settings
